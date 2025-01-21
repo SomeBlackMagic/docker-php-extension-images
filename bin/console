@@ -1,0 +1,23 @@
+#!/usr/bin/env php
+<?php
+
+define("BASE_PATH", dirname(__DIR__) . '/');
+
+if (!is_file(dirname(__DIR__) . '/vendor/autoload.php')) {
+    throw new LogicException('Symfony Runtime is missing. Try running "composer require symfony/runtime".');
+}
+
+require_once dirname(__DIR__) . '/vendor/autoload.php';
+
+use App\Command\RenderOneCommand;
+use Symfony\Component\Console\Application;
+use Symfony\Component\Console\Input\InputOption;
+use App\Command\RenderCommand;
+
+$cli = new Application('Application', '@package_version@');
+$cli->setCatchExceptions(true);
+$cli->addCommands([
+    new RenderCommand(),
+    new RenderOneCommand(),
+]);
+$cli->run();
