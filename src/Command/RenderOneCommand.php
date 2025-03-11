@@ -59,9 +59,11 @@ class RenderOneCommand extends Command
         $arr = [
             'docker buildx build ',
             '--platform linux/amd64,linux/arm64/v8',
-            '--builder builder',
+//            '--platform linux/amd64',
+//            '--builder builder',
             '--progress plain',
             '--push',
+            '--load',
             '--tag '.$input->getOption('image').':'.$phpVersion.'-'.$ext.'-'.$os,
             '--file ' . BASE_PATH . 'dst/' . $phpVersion . '/' . $os . '/' . $ext.'.Dockerfile',
             BASE_PATH . 'dst/' . $phpVersion . '/' . $os . '/' ,
