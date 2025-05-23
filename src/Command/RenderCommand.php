@@ -14,8 +14,8 @@ class RenderCommand extends Command
 {
     protected static $defaultName = 'render';
 
-    private $phpVersion = 8.3;
-    private $os = 'alpine';
+    private $phpVersion = 7.4;
+    private $os = 'glibc';
 
 
     protected function configure()

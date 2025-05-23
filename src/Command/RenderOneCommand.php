@@ -63,7 +63,6 @@ class RenderOneCommand extends Command
 //            '--builder builder',
             '--progress plain',
             '--push',
-            '--load',
             '--tag '.$input->getOption('image').':'.$phpVersion.'-'.$ext.'-'.$os,
             '--file ' . BASE_PATH . 'dst/' . $phpVersion . '/' . $os . '/' . $ext.'.Dockerfile',
             BASE_PATH . 'dst/' . $phpVersion . '/' . $os . '/' ,
