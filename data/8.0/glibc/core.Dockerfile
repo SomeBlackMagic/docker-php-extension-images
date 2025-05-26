@@ -1,4 +1,4 @@
-FROM php:8.0 AS builder
+FROM php:8.0-bullseye AS builder
 
 RUN set -eux \
     && apt update \

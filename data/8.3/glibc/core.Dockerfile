@@ -1,4 +1,4 @@
-FROM php:8.3 AS builder
+FROM php:8.3-bookworm AS builder
 
 RUN set -eux \
     && apt update \

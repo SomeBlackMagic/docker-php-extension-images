@@ -1,8 +1,8 @@
-FROM php:8.1-bookworm AS builder
+FROM php:8.4-alpine AS builder
 
 RUN set -eux \
-    && apt update \
-    && apt install -y curl autoconf autoconf automake git gcc make g++ \
+    && apk upgrade --available \
+    && apk add curl autoconf build-base autoconf automake git gcc make g++  \
     && true
 
 ADD --chmod=0755 \
@@ -33,9 +33,7 @@ RUN set -eux \
     && git commit -m "core" \
     && true
 
-
 {{ module | raw }}
-
 
 RUN set -eux \
     # Installation: Generic
