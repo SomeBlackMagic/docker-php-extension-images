@@ -35,4 +35,49 @@ ssh://root@37.27.244.168  \
 --driver-opt env.BUILDKIT_STEP_LOG_MAX_SPEED=10000000 
 ```
 
+```bash
 
+php bin/console render 7.4 glibc
+php bin/console render 7.4 musl
+
+
+php bin/console render 8.0 glibc
+php bin/console render 8.0 musl
+
+
+php bin/console render 8.1 glibc
+php bin/console render 8.1 musl
+
+php bin/console render 8.2 glibc
+php bin/console render 8.2 musl
+
+php bin/console render 8.3 glibc
+php bin/console render 8.3 musl
+
+php bin/console render 8.4 glibc
+php bin/console render 8.4 musl
+
+
+
+bash docker-php-extension-images/dst/builder-7.4-glibc.sh
+bash docker-php-extension-images/dst/builder-7.4-musl.sh
+
+
+bash docker-php-extension-images/dst/builder-8.0-glibc.sh
+bash docker-php-extension-images/dst/builder-8.0-musl.sh
+
+
+bash docker-php-extension-images/dst/builder-8.1-glibc.sh
+bash docker-php-extension-images/dst/builder-8.1-musl.sh
+
+bash docker-php-extension-images/dst/builder-8.2-glibc.sh
+bash docker-php-extension-images/dst/builder-8.2-musl.sh
+
+bash docker-php-extension-images/dst/builder-8.3-glibc.sh
+bash docker-php-extension-images/dst/builder-8.3-musl.sh
+
+bash docker-php-extension-images/dst/builder-8.4-glibc.sh
+bash docker-php-extension-images/dst/builder-8.4-musl.sh
+
+
+```
