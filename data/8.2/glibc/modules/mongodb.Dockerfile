@@ -3,7 +3,7 @@ RUN set -eux \
     # Installation: Generic
     # Type:         PECL extension
     # Default:      Pecl command
-    && apt install -y libicu-dev libsasl2-dev libsnappy-dev \
+    && apt install -y libicu-dev libsasl2-dev libsnappy-dev libssl-dev \
     && pecl install mongodb-1.21.0 \
     # Enabling
     && docker-php-ext-enable mongodb \
