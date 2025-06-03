@@ -2,7 +2,7 @@
 RUN set -eux \
     # Installation: Generic
     # Type:         Built-in extension
-    && apk add linux-headers \
-    && docker-php-ext-install -j$(getconf _NPROCESSORS_ONLN) sockets \
+#    && apk add linux-headers \
+    && install-php-extensions sockets \
     && php -m | grep -oiE '^sockets$' \
     && true

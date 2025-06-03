@@ -2,7 +2,7 @@
 RUN set -eux \
     # Installation: Generic
     # Type:         Built-in extension \
-    && apk add aspell-dev \
-    && docker-php-ext-install -j$(getconf _NPROCESSORS_ONLN) pspell \
+#    && apk add aspell-dev \
+    && install-php-extensions pspell \
     && php -m | grep -oiE '^pspell$' \
     && true

@@ -3,8 +3,8 @@ RUN set -eux \
     # Installation: Generic
     # Type:         PECL extension
     # Default:      Pecl command
-    && apk add pkgconf vips-dev \
-    && pecl install vips \
+#    && apk add pkgconf vips-dev \
+#    && pecl install vips \
     # Enabling
-    && docker-php-ext-enable vips \
+    && install-php-extensions vips \
     && true

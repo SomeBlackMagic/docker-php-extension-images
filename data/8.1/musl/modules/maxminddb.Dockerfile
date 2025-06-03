@@ -3,9 +3,9 @@ RUN set -eux \
     # Installation: Generic
     # Type:         PECL extension
     # Default:      Pecl command \
-    && apk add libmaxminddb-dev \
-    && pecl install maxminddb \
+#    && apk add libmaxminddb-dev \
+#    && pecl install maxminddb \
     # Enabling
-    && docker-php-ext-enable maxminddb \
+    && install-php-extensions maxminddb \
     && php -m | grep -oiE '^maxminddb$' \
     && true

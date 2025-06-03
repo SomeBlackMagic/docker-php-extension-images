@@ -9,7 +9,7 @@
 #
 #
 ## -------------------- Installing PHP Extension: swoole --------------------
-#RUN set -eux \
+RUN set -eux \
 #    # Installation: Generic
 #    # Type:         PECL extension
 #    # Custom:       Pecl command  \
@@ -20,6 +20,6 @@
 #    && apk add openssl-dev \
 #    && yes yes | pecl install swoole \
 #    # Enabling
-#    && docker-php-ext-enable swoole \
-#    && php -m | grep -oiE '^swoole$' \
-#    && true
+    && install-php-extensions swoole \
+    && php -m | grep -oiE '^swoole$' \
+    && true

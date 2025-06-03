@@ -3,8 +3,8 @@ RUN set -eux \
     # Installation: Generic
     # Type:         PECL extension
     # Default:      Pecl command
-    && pecl install psr \
+#    && pecl install psr \
     # Enabling
-    && docker-php-ext-enable psr \
+    && install-php-extensions psr \
     && php -m | grep -oiE '^psr$' \
     && true

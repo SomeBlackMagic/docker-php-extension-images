@@ -1,15 +1,17 @@
-FROM php:8.2-bookworm AS builder
-
-COPY --from=ghcr.io/mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
-COPY --from=bitnami/git:2-debian-12 / /tmp/bitnami-git
-
+FROM php:8.2-bookworm AS git-core
 
 RUN set -eux \
-    && ln -s /tmp/bitnami-git/opt/bitnami/git/bin/git /usr/local/bin/git \
+    && apt update \
+    && apt install -y git \
     && true
 
+
+COPY --from=php:8.2-bookworm / /opt
+
+COPY --from=ghcr.io/mlocati/php-extension-installer /usr/bin/install-php-extensions /opt/usr/local/bin/
+
 USER root
-WORKDIR /
+WORKDIR /opt
 
 COPY <<EOF .gitignore
 /proc
@@ -33,12 +35,25 @@ RUN set -eux \
     && true
 
 
+FROM php:8.2-bookworm as builder-temp
+
+COPY --from=ghcr.io/mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
+
+COPY --from=git-core /opt/.git /.git
+COPY --from=git-core /opt/.gitignore /.gitignore
+
 {{ module | raw }}
 
+FROM git-core as artifacts
+
+COPY --from=builder-temp / /opt/
+
+WORKDIR /opt
 
 RUN set -eux \
-    && (git ls-files --others --exclude-standard; git diff --name-only --cached --diff-filter=A) | sort -u | while IFS= read -r file; do cp -v --parents "/${file}" /opt; done \
+    && mkdir /dst \
+    && (git ls-files --others --exclude-standard; git diff --name-only --cached --diff-filter=A) | sort -u | while IFS= read -r file; do cp -v --parents "/opt/${file}" /dst; done \
     && true
 
 FROM scratch
-COPY --from=builder /opt /
+COPY --from=artifacts /dst/opt /

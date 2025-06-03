@@ -3,8 +3,8 @@ RUN set -eux \
     # Installation: Generic
     # Type:         PECL extension
     # Default:      Pecl command
-    && pecl install redis \
+#    && pecl install redis \
     # Enabling
-    && docker-php-ext-enable redis \
+    && install-php-extensions redis \
     && php -m | grep -oiE '^redis$' \
     && true

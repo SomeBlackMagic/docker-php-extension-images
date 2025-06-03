@@ -1,54 +1,17 @@
-FROM alpine:3.20 as git-static
-
-# Установим зависимости
-RUN apk add --no-cache \
-    build-base \
-    curl \
-    musl-dev \
-    openssl-dev \
-    openssl-libs-static \
-    zlib-dev \
-    zlib-static \
-    expat-dev \
-    gettext \
-    perl \
-    tar \
-    autoconf
-# Установим переменные
-ENV GIT_VERSION=2.44.0
-
-# Скачиваем и компилируем Git статически
-RUN curl -LO https://mirrors.edge.kernel.org/pub/software/scm/git/git-${GIT_VERSION}.tar.gz && \
-    tar -xzf git-${GIT_VERSION}.tar.gz && \
-    cd git-${GIT_VERSION} && \
-    make configure && \
-    ./configure \
-        --prefix=/usr/local/git-static \
-        --with-openssl \
-        --with-curl \
-        --with-zlib \
-        CFLAGS="-static -O2" \
-        LDFLAGS="-static" && \
-    make -j$(nproc) && \
-    make install
-
-
-FROM php:8.3-alpine AS builder
-
-COPY --from=ghcr.io/mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
-COPY --from=git-static /usr/local/git-static /usr/local/git-static
+FROM php:8.3-alpine AS git-core
 
 RUN set -eux \
-    && apk upgrade --available \
-    && apk add autoconf gcc build-base \
+    && apk update \
+    && apk add git \
     && true
 
-RUN set -eux \
-    && ln -s /usr/local/git-static/bin/git /usr/local/bin/git \
-    && true
+
+COPY --from=php:8.3-bullseye / /opt
+
+COPY --from=ghcr.io/mlocati/php-extension-installer /usr/bin/install-php-extensions /opt/usr/local/bin/
 
 USER root
-WORKDIR /
+WORKDIR /opt
 
 COPY <<EOF .gitignore
 /proc
@@ -72,12 +35,27 @@ RUN set -eux \
     && true
 
 
+FROM php:8.3-alpine as builder-temp
+
+COPY --from=ghcr.io/mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
+
+COPY --from=git-core /opt/.git /.git
+COPY --from=git-core /opt/.gitignore /.gitignore
+
 {{ module | raw }}
 
+FROM git-core as artifacts
+
+RUN rm -f /opt/var/lock
+
+COPY --from=builder-temp / /opt/
+
+WORKDIR /opt
 
 RUN set -eux \
-    && (git ls-files --others --exclude-standard; git diff --name-only --cached --diff-filter=A) | sort -u | while IFS= read -r file; do cp -v --parents "/${file}" /opt; done \
+    && mkdir /dst \
+    && (git ls-files --others --exclude-standard; git diff --name-only --cached --diff-filter=A) | sort -u | while IFS= read -r file; do cp -v --parents "/opt/${file}" /dst; done \
     && true
 
 FROM scratch
-COPY --from=builder /opt /
+COPY --from=artifacts /dst/opt /

@@ -3,9 +3,9 @@ RUN set -eux \
     # Installation: Generic
     # Type:         PECL extension
     # Default:      Pecl command \
-    && apk add yaml-dev \
-    && pecl install yaml \
+#    && apk add yaml-dev \
+#    && pecl install yaml \
     # Enabling
-    && docker-php-ext-enable yaml \
+    && install-php-extensions yaml \
     && php -m | grep -oiE '^yaml$' \
     && true

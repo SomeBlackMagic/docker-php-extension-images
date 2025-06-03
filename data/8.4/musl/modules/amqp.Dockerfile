@@ -3,9 +3,9 @@ RUN set -eux \
     # Installation: Generic
     # Type:         PECL extension
     # Custom:       Pecl command
-    && apk add rabbitmq-c-dev \
-    && echo "/usr" | pecl install amqp \
+#    && apk add rabbitmq-c-dev \
+#    && echo "/usr" | pecl install amqp \
     # Enabling
-    && docker-php-ext-enable amqp \
+    && install-php-extensions amqp \
     && php -m | grep -oiE '^amqp$' \
     && true
