@@ -1,13 +1,51 @@
+FROM alpine:3.20 as git-static
+
+# Установим зависимости
+RUN apk add --no-cache \
+    build-base \
+    curl \
+    musl-dev \
+    openssl-dev \
+    openssl-libs-static \
+    zlib-dev \
+    zlib-static \
+    expat-dev \
+    gettext \
+    perl \
+    tar \
+    autoconf
+# Установим переменные
+ENV GIT_VERSION=2.44.0
+
+# Скачиваем и компилируем Git статически
+RUN curl -LO https://mirrors.edge.kernel.org/pub/software/scm/git/git-${GIT_VERSION}.tar.gz && \
+    tar -xzf git-${GIT_VERSION}.tar.gz && \
+    cd git-${GIT_VERSION} && \
+    make configure && \
+    ./configure \
+        --prefix=/usr/local/git-static \
+        --with-openssl \
+        --with-curl \
+        --with-zlib \
+        CFLAGS="-static -O2" \
+        LDFLAGS="-static" && \
+    make -j$(nproc) && \
+    make install
+
+
 FROM php:8.0-alpine AS builder
+
+COPY --from=ghcr.io/mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
+COPY --from=git-static /usr/local/git-static /usr/local/git-static
 
 RUN set -eux \
     && apk upgrade --available \
-    && apk add curl autoconf build-base autoconf automake git gcc make g++  \
+    && apk add autoconf gcc build-base \
     && true
 
-ADD --chmod=0755 \
-  https://github.com/mlocati/docker-php-extension-installer/releases/download/2.6.3/install-php-extensions \
-  /usr/local/bin/
+RUN set -eux \
+    && ln -s /usr/local/git-static/bin/git /usr/local/bin/git \
+    && true
 
 USER root
 WORKDIR /
@@ -33,11 +71,11 @@ RUN set -eux \
     && git commit -m "core" \
     && true
 
+
 {{ module | raw }}
 
+
 RUN set -eux \
-    # Installation: Generic
-    # Type:         Built-in extension
     && (git ls-files --others --exclude-standard; git diff --name-only --cached --diff-filter=A) | sort -u | while IFS= read -r file; do cp -v --parents "/${file}" /opt; done \
     && true
 

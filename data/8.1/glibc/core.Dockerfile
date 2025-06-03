@@ -1,13 +1,12 @@
 FROM php:8.1-bookworm AS builder
 
-RUN set -eux \
-    && apt update \
-    && apt install -y curl autoconf autoconf automake git gcc make g++ \
-    && true
+COPY --from=ghcr.io/mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
+COPY --from=bitnami/git:2-debian-12 / /tmp/bitnami-git
 
-ADD --chmod=0755 \
-  https://github.com/mlocati/docker-php-extension-installer/releases/download/2.6.3/install-php-extensions \
-  /usr/local/bin/
+
+RUN set -eux \
+    && ln -s /tmp/bitnami-git/opt/bitnami/git/bin/git /usr/local/bin/git \
+    && true
 
 USER root
 WORKDIR /
@@ -38,8 +37,6 @@ RUN set -eux \
 
 
 RUN set -eux \
-    # Installation: Generic
-    # Type:         Built-in extension
     && (git ls-files --others --exclude-standard; git diff --name-only --cached --diff-filter=A) | sort -u | while IFS= read -r file; do cp -v --parents "/${file}" /opt; done \
     && true
 
