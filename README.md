@@ -19,7 +19,7 @@ Docker PHP Extension Images provide pre-compiled PHP extensions for various PHP 
 ## Features
 
 - **Pre-compiled Extensions:** Save time by using pre-compiled PHP extensions.
-- **Multiple PHP Versions:** Supports PHP versions from 7.4 up to 8.3.
+- **Multiple PHP Versions:** Supports PHP versions from 7.4 up to 8.5.
 - **Alpine and Debian Base:** Currently available for Alpine Linux with plans to support Debian.
 - **Multi-Architecture Support:** Compiled for both `amd64` and `arm64`, ensuring compatibility with MacOS and various server environments.
 - **Easy Integration:** Simple Docker commands to integrate extensions into your projects without local compilation.
@@ -31,6 +31,8 @@ Docker PHP Extension Images provide pre-compiled PHP extensions for various PHP 
 - PHP 8.1
 - PHP 8.2
 - PHP 8.3
+- PHP 8.4
+- PHP 8.5
 
 ## Supported Systems
 
