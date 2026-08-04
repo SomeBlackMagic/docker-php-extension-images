@@ -1,0 +1,528 @@
+name: Build PHP Extension Images
+
+# Trigger: manually via GitHub UI or API
+# POST /repos/{owner}/{repo}/actions/workflows/build-images.yml/dispatches
+on:
+  workflow_dispatch:
+    inputs:
+
+      php_version:
+        description: 'PHP version or "all" (builds 7.4–8.5)'
+        required: true
+        default: '8.3'
+        type: choice
+        options:
+          - 'all'
+          - '7.4'
+          - '8.0'
+          - '8.1'
+          - '8.2'
+          - '8.3'
+          - '8.4'
+          - '8.5'
+
+      os_type:
+        description: 'Base image variant ("both" builds glibc and musl)'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - glibc
+          - musl
+
+      extension:
+        description: 'Extension name (e.g. redis, xdebug) or "all"'
+        required: false
+        default: 'all'
+        type: string
+
+      push:
+        description: 'Push built images to Docker Hub'
+        required: true
+        default: true
+        type: boolean
+
+      docker_image:
+        description: 'Target Docker Hub image (repository/name)'
+        required: false
+        default: 'someblackmagic/docker-php-extension-images'
+        type: string
+
+      server_type_x86:
+        description: 'Hetzner server type for x86 builder (cx22, cx32, cx42…)'
+        required: false
+        default: 'cx22'
+        type: string
+
+      server_type_arm:
+        description: 'Hetzner server type for ARM builder (cax11, cax21, cax31…)'
+        required: false
+        default: 'cax11'
+        type: string
+
+      location:
+        description: 'Hetzner datacenter (nbg1/fsn1/hel1 — Europe, sin — Asia)'
+        required: false
+        default: 'nbg1'
+        type: choice
+        options:
+          - nbg1
+          - fsn1
+          - hel1
+          - sin
+
+# Only one build per repo at a time; a run is never interrupted mid-flight.
+concurrency:
+  group: build-images
+  cancel-in-progress: false
+
+jobs:
+
+  # ══════════════════════════════════════════════════════════════════
+  # Job 1 — Provision two Hetzner VMs (x86 + ARM)
+  # ══════════════════════════════════════════════════════════════════
+  provision:
+    name: Provision Hetzner VMs
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    outputs:
+      x86_ip:      ${{ steps.create.outputs.x86_ip }}
+      arm_ip:      ${{ steps.create.outputs.arm_ip }}
+      ssh_key_b64: ${{ steps.keygen.outputs.ssh_key_b64 }}
+
+    steps:
+      # ── hcloud CLI ───────────────────────────────────────────────
+      - name: Install hcloud CLI
+        run: |
+          # /releases/latest/download/ redirects to the current release asset — no API call needed.
+          curl -fsSL \
+            https://github.com/hetznercloud/cli/releases/latest/download/hcloud-linux-amd64.tar.gz \
+            | sudo tar xz -C /usr/local/bin hcloud
+          hcloud version
+
+      # ── SSH key (per-run, masked in logs) ───────────────────────
+      - name: Generate SSH key pair
+        id: keygen
+        run: |
+          ssh-keygen -t ed25519 -f /tmp/hcloud_key -N "" -C "gh-action-${{ github.run_id }}"
+          SSH_KEY_B64=$(base64 -w0 /tmp/hcloud_key)
+          echo "::add-mask::${SSH_KEY_B64}"
+          echo "ssh_key_b64=${SSH_KEY_B64}" >> "$GITHUB_OUTPUT"
+
+      - name: Register public key with Hetzner
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          hcloud ssh-key create \
+            --name "gh-action-${{ github.run_id }}" \
+            --public-key "$(cat /tmp/hcloud_key.pub)"
+
+      # ── Create VMs ───────────────────────────────────────────────
+      - name: Create VMs
+        id: create
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          X86_NAME="php-builder-x86-${{ github.run_id }}"
+          ARM_NAME="php-builder-arm-${{ github.run_id }}"
+          SSH_KEY="gh-action-${{ github.run_id }}"
+
+          echo "▶ Creating x86 server (${{ inputs.server_type_x86 }}) at ${{ inputs.location }} …"
+          hcloud server create \
+            --name "$X86_NAME" \
+            --type "${{ inputs.server_type_x86 }}" \
+            --image ubuntu-24.04 \
+            --ssh-key "$SSH_KEY" \
+            --location "${{ inputs.location }}"
+
+          echo "▶ Creating ARM server (${{ inputs.server_type_arm }}) at ${{ inputs.location }} …"
+          hcloud server create \
+            --name "$ARM_NAME" \
+            --type "${{ inputs.server_type_arm }}" \
+            --image ubuntu-24.04 \
+            --ssh-key "$SSH_KEY" \
+            --location "${{ inputs.location }}"
+
+          X86_IP=$(hcloud server describe "$X86_NAME" -o format='{{.PublicNet.IPv4.IP}}')
+          ARM_IP=$(hcloud server describe "$ARM_NAME"  -o format='{{.PublicNet.IPv4.IP}}')
+
+          echo "x86_ip=${X86_IP}" >> "$GITHUB_OUTPUT"
+          echo "arm_ip=${ARM_IP}"  >> "$GITHUB_OUTPUT"
+          echo "x86: ${X86_NAME} → ${X86_IP}"
+          echo "arm: ${ARM_NAME} → ${ARM_IP}"
+
+      # ── Wait until both VMs accept SSH ───────────────────────────
+      - name: Wait for SSH on both VMs
+        run: |
+          echo "${{ steps.keygen.outputs.ssh_key_b64 }}" | base64 -d > /tmp/hcloud_key
+          chmod 600 /tmp/hcloud_key
+
+          wait_ssh() {
+            local HOST=$1 LABEL=$2
+            echo "Waiting for SSH on ${LABEL} (${HOST}) …"
+            for i in $(seq 1 40); do
+              ssh \
+                -o StrictHostKeyChecking=no \
+                -o ConnectTimeout=5 \
+                -o BatchMode=yes \
+                -i /tmp/hcloud_key \
+                "root@${HOST}" true 2>/dev/null \
+                && echo "  ✔ ${LABEL} ready" && return 0
+              echo "  attempt ${i}/40 — retrying in 15 s …"
+              sleep 15
+            done
+            echo "ERROR: SSH never became available on ${HOST}" >&2
+            return 1
+          }
+
+          wait_ssh "${{ steps.create.outputs.x86_ip }}" "x86"
+          wait_ssh "${{ steps.create.outputs.arm_ip }}"  "arm"
+
+  # ══════════════════════════════════════════════════════════════════
+  # Job 2 — Setup Docker on both VMs, configure buildx, run builds
+  # ══════════════════════════════════════════════════════════════════
+  build:
+    name: Build Images
+    needs: provision
+    runs-on: ubuntu-latest
+    # GitHub-hosted runners cap at 6 hours per job.
+    # Building ALL versions × ALL extensions will exceed this limit — run per-version instead.
+    timeout-minutes: 360
+
+    steps:
+      # ── Restore SSH key & point aliases at the VMs ───────────────
+      - name: Restore SSH key & configure SSH client
+        env:
+          SSH_KEY_B64: ${{ needs.provision.outputs.ssh_key_b64 }}
+          X86_IP: ${{ needs.provision.outputs.x86_ip }}
+          ARM_IP: ${{ needs.provision.outputs.arm_ip }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY_B64" | base64 -d > ~/.ssh/hcloud_key
+          chmod 600 ~/.ssh/hcloud_key
+
+          cat >> ~/.ssh/config << EOF
+          Host x86-builder
+            HostName ${X86_IP}
+            User root
+            IdentityFile ~/.ssh/hcloud_key
+            StrictHostKeyChecking no
+            ServerAliveInterval 30
+
+          Host arm-builder
+            HostName ${ARM_IP}
+            User root
+            IdentityFile ~/.ssh/hcloud_key
+            StrictHostKeyChecking no
+            ServerAliveInterval 30
+          EOF
+
+      # ── Install Docker on ARM VM ─────────────────────────────────
+      - name: Install Docker on ARM VM
+        run: |
+          ssh arm-builder bash -s << 'ENDSSH'
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq ca-certificates curl
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+            -o /etc/apt/keyrings/docker.asc
+          chmod a+r /etc/apt/keyrings/docker.asc
+          . /etc/os-release
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+            https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
+            > /etc/apt/sources.list.d/docker.list
+          apt-get update -qq
+          apt-get install -y -qq \
+            docker-ce docker-ce-cli containerd.io docker-buildx-plugin
+          systemctl enable --now docker
+          docker info --format '✔ ARM Docker {{.ServerVersion}} on {{.Architecture}}'
+          ENDSSH
+
+      # ── Install Docker + PHP + Composer on x86 VM ────────────────
+      - name: Install Docker + PHP + Composer on x86 VM
+        run: |
+          ssh x86-builder bash -s << 'ENDSSH'
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq \
+            ca-certificates curl git unzip \
+            php-cli php-xml php-mbstring
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+            -o /etc/apt/keyrings/docker.asc
+          chmod a+r /etc/apt/keyrings/docker.asc
+          . /etc/os-release
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+            https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
+            > /etc/apt/sources.list.d/docker.list
+          apt-get update -qq
+          apt-get install -y -qq \
+            docker-ce docker-ce-cli containerd.io docker-buildx-plugin
+          systemctl enable --now docker
+          docker info --format '✔ x86 Docker {{.ServerVersion}} on {{.Architecture}}'
+          curl -fsSL https://getcomposer.org/installer \
+            | php -- --install-dir=/usr/local/bin --filename=composer --quiet
+          composer --version
+          ENDSSH
+
+      # ── Give x86 SSH access to ARM (needed by buildx) ────────────
+      - name: Copy SSH key to x86 VM & pre-accept ARM host key
+        env:
+          ARM_IP: ${{ needs.provision.outputs.arm_ip }}
+        run: |
+          scp ~/.ssh/hcloud_key x86-builder:/root/.ssh/arm_builder_key
+          ssh x86-builder chmod 600 /root/.ssh/arm_builder_key
+
+          # Write ARM alias into x86's SSH config
+          ssh x86-builder "cat >> /root/.ssh/config" << EOF
+          Host arm-builder
+            HostName ${ARM_IP}
+            User root
+            IdentityFile /root/.ssh/arm_builder_key
+            StrictHostKeyChecking no
+            ServerAliveInterval 30
+          EOF
+
+          # Accept ARM host key without interaction, then smoke-test
+          ssh x86-builder "ssh-keyscan -H '${ARM_IP}' >> /root/.ssh/known_hosts 2>/dev/null"
+          ssh x86-builder \
+            ssh -o BatchMode=yes arm-builder \
+            "docker info --format '✔ ARM reachable from x86: {{.Architecture}}'"
+
+      # ── Create multi-node buildx builder on x86 ──────────────────
+      #    amd64 images build locally on x86;
+      #    arm64 images build on the ARM VM via SSH.
+      - name: Create Docker buildx builder (x86 + ARM nodes)
+        env:
+          ARM_IP: ${{ needs.provision.outputs.arm_ip }}
+        run: |
+          ssh x86-builder bash -s << EOF
+          set -euo pipefail
+
+          # Node 1 — local x86 (amd64)
+          docker buildx create \
+            --name local_remote_builder \
+            --node amd64 \
+            --platform linux/amd64,linux/386 \
+            --driver-opt env.BUILDKIT_STEP_LOG_MAX_SIZE=10000000 \
+            --driver-opt env.BUILDKIT_STEP_LOG_MAX_SPEED=10000000
+
+          # Node 2 — remote ARM via SSH (arm64)
+          docker buildx create \
+            --append \
+            --name local_remote_builder \
+            --node arm64 \
+            --platform linux/arm64/v8,linux/arm/v7,linux/arm/v6 \
+            "ssh://root@${ARM_IP}" \
+            --driver-opt env.BUILDKIT_STEP_LOG_MAX_SIZE=10000000 \
+            --driver-opt env.BUILDKIT_STEP_LOG_MAX_SPEED=10000000
+
+          # Bootstrap — starts BuildKit daemons on both nodes
+          docker buildx inspect local_remote_builder --bootstrap
+
+          docker buildx use local_remote_builder
+          echo "Active builder nodes:"
+          docker buildx ls
+          EOF
+
+      # ── Docker Hub login ─────────────────────────────────────────
+      - name: Login to Docker Hub on x86 VM
+        if: ${{ inputs.push == true }}
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          echo "${DOCKERHUB_TOKEN}" \
+            | ssh x86-builder "docker login -u '${DOCKERHUB_USERNAME}' --password-stdin"
+
+      # ── Clone repo & composer install ────────────────────────────
+      - name: Clone repository on x86 VM
+        run: |
+          ssh x86-builder bash -s << 'ENDSSH'
+          set -euo pipefail
+          git clone "https://github.com/${{ github.repository }}.git" /opt/php-ext-builder
+          cd /opt/php-ext-builder
+          git checkout "${{ github.sha }}"
+          composer install --no-dev --no-interaction --prefer-dist --quiet
+          echo "✔ Repository ready at /opt/php-ext-builder"
+          ENDSSH
+
+      # ── Generate build script & upload to x86 ───────────────────
+      - name: Generate & upload build script
+        run: |
+          # Expand multi-value inputs on the runner before writing the script.
+          # Variables without leading backslash are substituted NOW (locally);
+          # variables with \$ survive as literal $VAR for the remote shell.
+          if [ "${{ inputs.php_version }}" = "all" ]; then
+            PHP_VERSIONS="7.4 8.0 8.1 8.2 8.3 8.4 8.5"
+          else
+            PHP_VERSIONS="${{ inputs.php_version }}"
+          fi
+
+          if [ "${{ inputs.os_type }}" = "both" ]; then
+            OS_TYPES="glibc musl"
+          else
+            OS_TYPES="${{ inputs.os_type }}"
+          fi
+
+          cat > /tmp/build.sh << SCRIPT
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          # ── Parameters (baked in at generation time) ─────────────
+          PHP_VERSIONS="${PHP_VERSIONS}"
+          OS_TYPES="${OS_TYPES}"
+          EXT="${{ inputs.extension }}"
+          DO_PUSH="${{ inputs.push }}"
+          DOCKER_IMAGE="${{ inputs.docker_image }}"
+          REPO="/opt/php-ext-builder"
+
+          docker buildx use local_remote_builder
+
+          for VERSION in \${PHP_VERSIONS}; do
+            for OS in \${OS_TYPES}; do
+              echo ""
+              echo "══════════════════════════════════════════════════"
+              echo "  PHP \${VERSION} / \${OS}"
+              echo "══════════════════════════════════════════════════"
+
+              cd "\${REPO}"
+
+              # Render Dockerfiles + generate builder script
+              php bin/console render --image "\${DOCKER_IMAGE}" "\${VERSION}" "\${OS}"
+
+              if [ "\${EXT}" = "all" ]; then
+                # ── Build every extension ───────────────────────────
+                BUILDER_SH="\${REPO}/dst/builder-\${VERSION}-\${OS}.sh"
+
+                if [ "\${DO_PUSH}" != "true" ]; then
+                  sed -i 's/ --push / /g' "\${BUILDER_SH}"
+                fi
+
+                echo "Running builder script for all extensions …"
+                bash "\${BUILDER_SH}"
+
+              else
+                # ── Build a single extension ────────────────────────
+                DOCKERFILE="\${REPO}/dst/\${VERSION}/\${OS}/\${EXT}.Dockerfile"
+
+                if [ ! -f "\${DOCKERFILE}" ]; then
+                  echo "ERROR: extension '\${EXT}' not found for PHP \${VERSION}/\${OS}" >&2
+                  echo "Available extensions:" >&2
+                  ls "\${REPO}/data/\${VERSION}/\${OS}/modules/" \
+                    | sed 's/\.Dockerfile//' | sort >&2
+                  exit 1
+                fi
+
+                TAG="\${DOCKER_IMAGE}:\${VERSION}-\${EXT}-\${OS}"
+                PUSH_FLAG=""
+                [ "\${DO_PUSH}" = "true" ] && PUSH_FLAG="--push"
+
+                echo "Building '\${EXT}' → \${TAG}"
+                docker buildx build \
+                  --platform linux/amd64,linux/arm64/v8 \
+                  --builder local_remote_builder \
+                  \${PUSH_FLAG:+\${PUSH_FLAG}} \
+                  --pull \
+                  --progress plain \
+                  --tag "\${TAG}" \
+                  --file "\${DOCKERFILE}" \
+                  "\${REPO}/dst/\${VERSION}/\${OS}/"
+              fi
+            done
+          done
+
+          echo ""
+          echo "✔ All builds complete."
+          SCRIPT
+
+          chmod +x /tmp/build.sh
+          scp /tmp/build.sh x86-builder:/tmp/build.sh
+
+      # ── Run it ───────────────────────────────────────────────────
+      - name: Run build
+        run: |
+          ssh x86-builder bash /tmp/build.sh
+
+  # ══════════════════════════════════════════════════════════════════
+  # Job 3 — Always delete VMs, even if provision or build failed/cancelled
+  #
+  # Design rules:
+  #   • Single step — if hcloud install fails nothing is skipped silently.
+  #   • No `set -e` inside the step — every resource is attempted regardless
+  #     of whether the previous deletion succeeded.
+  #   • Retry with exponential back-off — handles transient Hetzner API errors.
+  #   • Resources are identified by run_id in their name, so no job outputs
+  #     are required — works even when provision never completed.
+  # ══════════════════════════════════════════════════════════════════
+  teardown:
+    name: Teardown Hetzner VMs
+    needs: [provision, build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Delete all Hetzner resources for this run
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          # ── Install hcloud CLI ────────────────────────────────────
+          # Uses the /releases/latest/download/ redirect — no GitHub API call.
+          curl -fsSL \
+            https://github.com/hetznercloud/cli/releases/latest/download/hcloud-linux-amd64.tar.gz \
+            | sudo tar xz -C /usr/local/bin hcloud
+          hcloud version
+
+          # ── Helper: delete one resource with retry ────────────────
+          # Usage: delete_resource <type> <name>
+          # Returns 0 on success or "not found"; 1 if all retries exhausted.
+          delete_resource() {
+            local TYPE=$1 NAME=$2
+            local WAIT=10
+
+            for ATTEMPT in 1 2 3 4 5; do
+              # Check existence first — avoids an error exit on already-gone resources
+              if ! hcloud "$TYPE" describe "$NAME" >/dev/null 2>&1; then
+                echo "${TYPE} '${NAME}' not found — skipping"
+                return 0
+              fi
+
+              echo "Deleting ${TYPE} '${NAME}' (attempt ${ATTEMPT}/5) …"
+              if hcloud "$TYPE" delete "$NAME"; then
+                echo "  ✔ Deleted."
+                return 0
+              fi
+
+              if [ "$ATTEMPT" -lt 5 ]; then
+                echo "  Attempt ${ATTEMPT} failed — retrying in ${WAIT} s …"
+                sleep "$WAIT"
+                WAIT=$((WAIT * 2))   # exponential back-off: 10 20 40 80 s
+              fi
+            done
+
+            echo "ERROR: Could not delete ${TYPE} '${NAME}' after 5 attempts." >&2
+            return 1
+          }
+
+          # ── Delete all resources; accumulate errors ───────────────
+          ERRORS=0
+          delete_resource server  "php-builder-x86-${{ github.run_id }}" || ERRORS=$((ERRORS+1))
+          delete_resource server  "php-builder-arm-${{ github.run_id }}" || ERRORS=$((ERRORS+1))
+          delete_resource ssh-key "gh-action-${{ github.run_id }}"       || ERRORS=$((ERRORS+1))
+
+          # ── Final status ──────────────────────────────────────────
+          if [ "$ERRORS" -gt 0 ]; then
+            echo ""
+            echo "⚠ WARNING: ${ERRORS} resource(s) could not be deleted automatically."
+            echo "  Please check the Hetzner Cloud Console and remove any remaining"
+            echo "  servers/keys with run_id=${{ github.run_id }} manually."
+            exit 1
+          fi
+
+          echo "✔ All Hetzner resources for run ${{ github.run_id }} deleted."
