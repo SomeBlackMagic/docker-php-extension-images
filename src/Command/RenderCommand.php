@@ -62,7 +62,7 @@ class RenderCommand extends Command
             $extName = basename($file, ".Dockerfile");
             $arr = [
                 'docker buildx build',
-                '--platform linux/amd64,linux/arm64/v8',
+                '--platform linux/amd64,linux/arm64',
 //                '--builder builder',
                 '--push',
                 '--pull',

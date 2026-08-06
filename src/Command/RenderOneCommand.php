@@ -58,7 +58,7 @@ class RenderOneCommand extends Command
 
         $arr = [
             'docker buildx build ',
-            '--platform linux/amd64,linux/arm64/v8',
+            '--platform linux/amd64,linux/arm64',
 //            '--platform linux/amd64',
 //            '--builder builder',
             '--progress plain',
