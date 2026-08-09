@@ -1,19 +1,33 @@
-on arm node
-```bash
-
-apt install -y docker.io docker-buildx
-nano /root/.ssh/authorized_keys 
+On x86 cloud init 
+```
+#cloud-config
+package_update: true
+packages:
+  - mc
+  - htop
+  - iftop
+  - iotop
+  - pv
+  - ncdu
+  - git
+  - docker.io
+  - docker-buildx
+  - php-cli
+  - composer
+runcmd:
+  - git clone https://github.com/SomeBlackMagic/docker-php-extension-images.git /root/docker-php-extension-images
+  - cd /root/docker-php-extension-images && git config pull.rebase true
+  - ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
 
 ```
 
-
-# on amd node
-- install php pkg
-- install docker and buildx
-- generate ssh key
 ```bash
+cat /root/.ssh/id_ed25519.pub
 
-apt install docker-buildx
+```
+on arm node
+```bash
+nano /root/.ssh/authorized_keys 
 
 docker buildx create \
 --name local_remote_builder \
@@ -22,18 +36,30 @@ docker buildx create \
 --driver-opt env.BUILDKIT_STEP_LOG_MAX_SIZE=10000000 \
 --driver-opt env.BUILDKIT_STEP_LOG_MAX_SPEED=10000000
 
-ssh -o ConnectTimeout=30 -l root -- 37.27.244.168 <--- approve host key
-
+ssh -o ConnectTimeout=30 -l root -- 157.180.92.19 <--- approve host key
 
 docker buildx create \
 --name local_remote_builder  \
 --append  \
 --node arm  \
---platform linux/arm/v8,linux/arm/v7,linux/arm/v6,linux/arm64  \
-ssh://root@37.27.244.168  \
+--platform linux/arm64  \
+ssh://root@157.180.92.19  \
 --driver-opt env.BUILDKIT_STEP_LOG_MAX_SIZE=10000000  \
 --driver-opt env.BUILDKIT_STEP_LOG_MAX_SPEED=10000000 
+
+docker buildx use local_remote_builder
 ```
+
+
+docker buildx create \
+--name local_remote_builder \
+--append \
+--node arm \
+--platform linux/arm64 \
+ssh://a_cherniy@91.225.161.158:35000 \
+--driver-opt env.BUILDKIT_STEP_LOG_MAX_SIZE=10000000 \
+--driver-opt env.BUILDKIT_STEP_LOG_MAX_SPEED=10000000
+
 
 ```bash
 
@@ -81,3 +107,7 @@ bash docker-php-extension-images/dst/builder-8.4-musl.sh
 
 
 ```
+
+
+
+find ./ -type f -exec sed -i '' 's#\-\-push# #' *.sh {} \;

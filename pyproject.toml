@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docker-php-extension-images-render"
+version = "0.1.0"
+description = "Render Dockerfiles and build commands for PHP extension images"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "click>=8.1,<9",
+    "Jinja2>=3.1,<4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "pytest-cov>=5,<7",
+]
+
+[project.scripts]
+render = "docker_render.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["docker_render*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
