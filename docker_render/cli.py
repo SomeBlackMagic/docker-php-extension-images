@@ -2,6 +2,7 @@
 
 import click
 
+from docker_render.aggregate_renderer import render_aggregate_dockerfile
 from docker_render.builder import (
     build_docker_command,
     write_builder_script,
@@ -15,6 +16,8 @@ from docker_render.exceptions import (
     TemplateNotFound,
 )
 from docker_render.paths import (
+    aggregate_dockerfile,
+    aggregate_template,
     builder_script,
     core_template,
     generated_dockerfile,
@@ -30,6 +33,36 @@ DEFAULT_IMAGE = "someblackmagic/docker-php-extension-images"
 @click.group()
 def cli() -> None:
     """Render and build Docker PHP extension images."""
+
+
+@cli.command("aggregate")
+@click.option("--image", default=DEFAULT_IMAGE, show_default=True)
+@click.argument("version")
+@click.argument("os_variant", metavar="OS")
+@click.argument("extensions", metavar="EXTENSIONS...", nargs=-1, required=True)
+def aggregate(
+    image: str,
+    version: str,
+    os_variant: str,
+    extensions: tuple[str, ...],
+) -> None:
+    """Render an aggregate verification Dockerfile."""
+    base_path = repository_root()
+    destination = aggregate_dockerfile(base_path)
+
+    try:
+        rendered = render_aggregate_dockerfile(
+            template_path=aggregate_template(base_path),
+            image=image,
+            version=version,
+            os_variant=os_variant,
+            extensions=extensions,
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(rendered, encoding="utf-8")
+        click.echo(f"Rendered aggregate Dockerfile: {destination}")
+    except DockerRenderError as error:
+        raise click.ClickException(str(error)) from error
 
 
 @cli.command("render")

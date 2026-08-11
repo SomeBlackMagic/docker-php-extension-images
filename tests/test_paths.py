@@ -96,6 +96,16 @@ def test_resolves_output_paths(
     )
 
 
+def test_resolves_aggregate_template_and_output_paths(
+    paths: ModuleType,
+    tmp_path: Path,
+) -> None:
+    assert paths.aggregate_template(tmp_path) == (
+        tmp_path / "templates" / "aggregate.Dockerfile"
+    )
+    assert paths.aggregate_dockerfile(tmp_path) == tmp_path / "var" / "Dockerfile"
+
+
 def test_all_path_functions_return_path_instances(
     paths: ModuleType,
     tmp_path: Path,
@@ -109,6 +119,8 @@ def test_all_path_functions_return_path_instances(
         paths.destination_directory("8.4", "glibc", tmp_path),
         paths.generated_dockerfile("8.4", "glibc", "xdebug", tmp_path),
         paths.builder_script("8.4", "glibc", tmp_path),
+        paths.aggregate_template(tmp_path),
+        paths.aggregate_dockerfile(tmp_path),
     ]
 
     assert all(isinstance(path, Path) for path in resolved_paths)
@@ -121,5 +133,7 @@ def test_path_resolution_does_not_create_files_or_directories(
     paths.module_file("8.5", "musl", "redis", tmp_path)
     paths.generated_dockerfile("8.5", "musl", "redis", tmp_path)
     paths.builder_script("8.5", "musl", tmp_path)
+    paths.aggregate_template(tmp_path)
+    paths.aggregate_dockerfile(tmp_path)
 
     assert list(tmp_path.iterdir()) == []

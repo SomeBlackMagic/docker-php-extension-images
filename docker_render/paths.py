@@ -76,3 +76,13 @@ def builder_script(
 ) -> Path:
     """Return the generated batch builder script path."""
     return repository_root(base_path) / "dst" / f"builder-{version}-{os_variant}.sh"
+
+
+def aggregate_template(base_path: Path | None = None) -> Path:
+    """Return the aggregate Dockerfile template path."""
+    return repository_root(base_path) / "templates" / "aggregate.Dockerfile"
+
+
+def aggregate_dockerfile(base_path: Path | None = None) -> Path:
+    """Return the generated aggregate Dockerfile path."""
+    return repository_root(base_path) / "var" / "Dockerfile"

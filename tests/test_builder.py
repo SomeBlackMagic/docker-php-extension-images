@@ -37,6 +37,18 @@ def test_builds_image_tag(builder: ModuleType) -> None:
     )
 
 
+def test_builds_default_registry_cache_reference(builder: ModuleType) -> None:
+    assert (
+        builder.build_cache_reference(
+            image="registry.example.com/php-extensions",
+            version="8.4",
+            extension="pdo_pgsql",
+            os_variant="musl",
+        )
+        == "registry.example.com/php-extensions:buildcache-8.4-pdo_pgsql-musl"
+    )
+
+
 def test_builds_batch_command_with_pull(builder: ModuleType, tmp_path: Path) -> None:
     dockerfile = tmp_path / "dst" / "8.4" / "glibc" / "redis.Dockerfile"
     context = dockerfile.parent
@@ -57,6 +69,10 @@ def test_builds_batch_command_with_pull(builder: ModuleType, tmp_path: Path) -> 
         "build",
         "--platform",
         "linux/amd64,linux/arm64",
+        "--cache-from",
+        "type=registry,ref=someblackmagic/docker-php-extension-images:buildcache-8.4-redis-glibc",
+        "--cache-to",
+        "type=registry,ref=someblackmagic/docker-php-extension-images:buildcache-8.4-redis-glibc,mode=max",
         "--push",
         "--pull",
         "--tag",
@@ -92,6 +108,10 @@ def test_builds_single_extension_command_with_plain_progress(
         "linux/amd64,linux/arm64",
         "--progress",
         "plain",
+        "--cache-from",
+        "type=registry,ref=example/php-extensions:buildcache-8.5-xdebug-musl",
+        "--cache-to",
+        "type=registry,ref=example/php-extensions:buildcache-8.5-xdebug-musl,mode=max",
         "--push",
         "--tag",
         "example/php-extensions:8.5-xdebug-musl",
@@ -99,6 +119,45 @@ def test_builds_single_extension_command_with_plain_progress(
         str(dockerfile),
         str(context),
     ]
+
+
+def test_uses_custom_registry_cache_reference(
+    builder: ModuleType,
+    tmp_path: Path,
+) -> None:
+    cache_ref = "registry.example.com/cache/php:redis-8.4"
+
+    command = builder.build_docker_command(
+        image="example/php-extensions",
+        version="8.4",
+        extension="redis",
+        os_variant="musl",
+        dockerfile=tmp_path / "redis.Dockerfile",
+        context=tmp_path,
+        cache_ref=cache_ref,
+    )
+
+    assert command[command.index("--cache-from") + 1] == (
+        f"type=registry,ref={cache_ref}"
+    )
+    assert command[command.index("--cache-to") + 1] == (
+        f"type=registry,ref={cache_ref},mode=max"
+    )
+
+
+def test_can_disable_registry_cache(builder: ModuleType, tmp_path: Path) -> None:
+    command = builder.build_docker_command(
+        image="example/php-extensions",
+        version="8.4",
+        extension="redis",
+        os_variant="musl",
+        dockerfile=tmp_path / "redis.Dockerfile",
+        context=tmp_path,
+        cache=False,
+    )
+
+    assert "--cache-from" not in command
+    assert "--cache-to" not in command
 
 
 @pytest.mark.parametrize(

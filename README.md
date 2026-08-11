@@ -106,6 +106,25 @@ COPY --from=someblackmagic/docker-php-extension-images:8.2-xdebug-alpine / /
 
 ```
 
+### Generating an Aggregate Verification Dockerfile
+
+Generate `var/Dockerfile` from an explicit, ordered extension list:
+
+```bash
+uv run render aggregate 7.4 musl mysqli pdo_mysql propro raphf redis sockets zip http
+```
+
+Use `--image` to select a different image repository. The extension order in the
+generated Dockerfile matches the command-line order.
+
+### Development Tests
+
+Run the complete deterministic test suite with coverage:
+
+```bash
+uv run pytest tests/ -v --cov=docker_render --cov-report=term-missing
+```
+
 
 ### License
 This project is licensed under the MIT License.
