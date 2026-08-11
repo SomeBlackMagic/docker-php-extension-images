@@ -1,5 +1,7 @@
-"""Tests for deterministic Docker Buildx command construction."""
+"""Tests for Docker Buildx command and builder script generation."""
 
+import os
+import shlex
 from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
@@ -173,3 +175,68 @@ def test_command_construction_has_no_filesystem_side_effects(
     )
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_writes_executable_builder_script_with_strict_bash_options(
+    builder: ModuleType,
+    tmp_path: Path,
+) -> None:
+    script_path = tmp_path / "dst" / "builder-8.4-glibc.sh"
+
+    builder.write_builder_script(
+        script_path,
+        [["docker", "buildx", "build", "--push", "."]],
+    )
+
+    assert script_path.read_text(encoding="utf-8") == (
+        "#!/usr/bin/env bash\nset -euo pipefail\ndocker buildx build --push .\n"
+    )
+    assert os.access(script_path, os.X_OK)
+
+
+def test_quotes_builder_script_arguments_for_safe_shell_round_trip(
+    builder: ModuleType,
+    tmp_path: Path,
+) -> None:
+    script_path = tmp_path / "builder.sh"
+    command = [
+        "docker",
+        "buildx",
+        "build",
+        "--file",
+        "dst/build context/redis extension.Dockerfile",
+        "value with $HOME; $(echo unsafe) & *",
+    ]
+
+    builder.write_builder_script(script_path, [command])
+
+    command_line = script_path.read_text(encoding="utf-8").splitlines()[2]
+    assert shlex.split(command_line) == command
+
+
+def test_replaces_stale_builder_script_content(
+    builder: ModuleType,
+    tmp_path: Path,
+) -> None:
+    script_path = tmp_path / "builder.sh"
+    script_path.write_text("stale command\n", encoding="utf-8")
+
+    builder.write_builder_script(script_path, [["docker", "version"]])
+
+    content = script_path.read_text(encoding="utf-8")
+    assert content == "#!/usr/bin/env bash\nset -euo pipefail\ndocker version\n"
+    assert "stale command" not in content
+
+
+def test_creates_no_op_builder_script_for_empty_command_list(
+    builder: ModuleType,
+    tmp_path: Path,
+) -> None:
+    script_path = tmp_path / "nested" / "builder.sh"
+
+    builder.write_builder_script(script_path, [])
+
+    assert script_path.read_text(encoding="utf-8") == (
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+    )
+    assert os.access(script_path, os.X_OK)
