@@ -117,6 +117,36 @@ def test_cli_help() -> None:
 
     assert result.exit_code == 0
     assert "Render and build Docker PHP extension images." in result.output
+    assert "-v, --verbose" in result.output
+
+
+def test_verbose_mode_reports_workflow_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_render_inputs(tmp_path)
+    monkeypatch.setattr(cli_module, "repository_root", lambda: tmp_path, raising=False)
+
+    result = CliRunner().invoke(cli, ["-v", "render", "8.4", "glibc"])
+
+    assert result.exit_code == 0
+    assert "INFO docker_render.cli: Starting batch render" in result.output
+    assert "INFO docker_render.cli: Processing extension redis" in result.output
+    assert "INFO docker_render.builder: Wrote executable builder script" in result.output
+
+
+def test_double_verbose_mode_reports_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_render_inputs(tmp_path)
+    monkeypatch.setattr(cli_module, "repository_root", lambda: tmp_path, raising=False)
+
+    result = CliRunner().invoke(cli, ["-vv", "render", "8.4", "glibc"])
+
+    assert result.exit_code == 0
+    assert "DEBUG docker_render.cli: Image status" in result.output
+    assert "DEBUG docker_render.builder: Constructed Docker command" in result.output
 
 
 def test_compatibility_launcher_help() -> None:
@@ -164,6 +194,10 @@ def test_render_one_writes_dockerfile_and_runs_expected_build(
             "linux/amd64,linux/arm64",
             "--progress",
             "plain",
+            "--cache-from",
+            f"type=registry,ref={DEFAULT_IMAGE}:buildcache-8.4-redis-glibc",
+            "--cache-to",
+            f"type=registry,ref={DEFAULT_IMAGE}:buildcache-8.4-redis-glibc,mode=max",
             "--push",
             "--tag",
             f"{DEFAULT_IMAGE}:8.4-redis-glibc",
@@ -481,13 +515,9 @@ def test_render_batch_expands_cache_reference_template_per_extension(
     )
 
     assert result.exit_code == 0
-    script = (tmp_path / "dst" / "builder-8.4-glibc.sh").read_text(
-        encoding="utf-8"
-    )
+    script = (tmp_path / "dst" / "builder-8.4-glibc.sh").read_text(encoding="utf-8")
     for extension in ("amqp", "redis"):
-        cache_ref = (
-            f"registry.example.com/php-extensions:cache-8.4-{extension}-glibc"
-        )
+        cache_ref = f"registry.example.com/php-extensions:cache-8.4-{extension}-glibc"
         assert f"type=registry,ref={cache_ref}" in script
         assert f"type=registry,ref={cache_ref},mode=max" in script
 

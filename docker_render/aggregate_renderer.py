@@ -1,5 +1,6 @@
 """Aggregate verification Dockerfile rendering."""
 
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -8,6 +9,8 @@ from jinja2 import TemplateNotFound as JinjaTemplateNotFound
 from docker_render.builder import build_image_tag
 from docker_render.exceptions import TemplateNotFound
 from docker_render.renderer import create_environment
+
+LOGGER = logging.getLogger(__name__)
 
 
 def render_aggregate_dockerfile(
@@ -19,6 +22,7 @@ def render_aggregate_dockerfile(
     extensions: Sequence[str],
 ) -> str:
     """Render an aggregate Dockerfile for an ordered extension sequence."""
+    LOGGER.debug("Rendering aggregate template %s for %d extensions", template_path, len(extensions))
     if not extensions or any(not extension.strip() for extension in extensions):
         raise ValueError("At least one extension is required")
 
@@ -33,8 +37,10 @@ def render_aggregate_dockerfile(
         for extension in extensions
     ]
     base_os = "alpine" if os_variant == "musl" else os_variant
-    return template.render(
+    rendered = template.render(
         version=version,
         base_os=base_os,
         image_tags=image_tags,
     )
+    LOGGER.debug("Rendered aggregate Dockerfile (%d bytes)", len(rendered.encode("utf-8")))
+    return rendered

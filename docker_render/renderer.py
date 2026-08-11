@@ -1,5 +1,6 @@
 """Dockerfile template rendering."""
 
+import logging
 from pathlib import Path
 
 from jinja2 import (
@@ -13,6 +14,8 @@ from jinja2 import (
 
 from docker_render.exceptions import TemplateNotFound
 
+LOGGER = logging.getLogger(__name__)
+
 
 def _raw(value: str) -> str:
     """Preserve the Twig-compatible raw filter used by core templates."""
@@ -21,6 +24,7 @@ def _raw(value: str) -> str:
 
 def create_environment(template_directory: Path) -> Environment:
     """Create the Jinja environment used for Dockerfile templates."""
+    LOGGER.debug("Creating Jinja environment for %s", template_directory)
     environment = Environment(
         loader=FileSystemLoader(template_directory, encoding="utf-8"),
         autoescape=False,
@@ -33,6 +37,7 @@ def create_environment(template_directory: Path) -> Environment:
 
 def render_dockerfile(template_path: Path, module_path: Path) -> str:
     """Render a module fragment into a core Dockerfile template."""
+    LOGGER.debug("Rendering template %s with module %s", template_path, module_path)
     environment = create_environment(template_path.parent)
 
     try:
@@ -41,4 +46,6 @@ def render_dockerfile(template_path: Path, module_path: Path) -> str:
         raise TemplateNotFound(template_path) from error
 
     module = module_path.read_text(encoding="utf-8")
-    return template.render(module=module)
+    rendered = template.render(module=module)
+    LOGGER.debug("Rendered Dockerfile (%d bytes)", len(rendered.encode("utf-8")))
+    return rendered
