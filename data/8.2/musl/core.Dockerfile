@@ -6,7 +6,7 @@ RUN set -eux \
     && true
 
 
-COPY --from=php:8.2-bullseye / /opt
+COPY --from=php:8.2-alpine / /opt
 
 COPY --from=ghcr.io/mlocati/php-extension-installer /usr/bin/install-php-extensions /opt/usr/local/bin/
 
