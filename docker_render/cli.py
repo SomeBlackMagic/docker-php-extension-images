@@ -299,6 +299,17 @@ def render_one(
         dockerfile.write_text(rendered, encoding="utf-8")
         LOGGER.info("Wrote Dockerfile to %s", dockerfile)
 
+        resolved_cache_ref = (
+            expand_cache_reference_template(
+                cache_ref,
+                image=image,
+                version=version,
+                extension=extension,
+                os_variant=os_variant,
+            )
+            if cache_ref is not None
+            else None
+        )
         command = build_docker_command(
             image=image,
             version=version,
@@ -308,7 +319,7 @@ def render_one(
             context=dockerfile.parent,
             progress_plain=True,
             cache=cache,
-            cache_ref=cache_ref,
+            cache_ref=resolved_cache_ref,
         )
         LOGGER.info("Starting Docker build for %s", image_tag)
         run_docker_build(command, verbose=True)
